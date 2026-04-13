@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "my-agent"
+version = "0.1.0"
+description = "A minimal AI agent project based on Hermes Agent architecture"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Your Name" }]
+license = { text = "MIT" }
+dependencies = [
+  "openai>=2.21.0,<3",
+  "anthropic>=0.39.0,<1",
+  "python-dotenv>=1.2.1,<2",
+  "pyyaml>=6.0.2,<7",
+  "rich>=14.3.3,<15",
+  "pydantic>=2.12.5,<3",
+  "fire>=0.7.1,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9.0.2,<10", "pytest-asyncio>=1.3.0,<2"]
