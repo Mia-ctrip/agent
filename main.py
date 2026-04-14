@@ -113,10 +113,7 @@ def setup_agent() -> Agent:
         system_prompt=(
             "You are a helpful AI assistant. You can use tools to help answer questions. "
             "Be concise and provide accurate information."
-        ),
-        max_turns=5,
-        base_url="https://api.minimaxi.com/anthropic",
-        api_key=os.getenv("MINIMAXI_API_KEY")
+        )
     )
 
     # Register built-in tools

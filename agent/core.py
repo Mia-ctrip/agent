@@ -12,8 +12,13 @@ import os
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 
-from anthropic import Anthropic as AnthropicClient
+import anthropic
 from openai import OpenAI as OpenAIClient
+
+from prompt.prompt_builder import (
+    DEFAULT_AGENT_IDENTITY, 
+    MEMORY_GUIDANCE
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,14 +63,11 @@ class Agent:
         """
         self.model = model or os.getenv("LLM_MODEL", "MiniMax-M2.7")
         self.provider = (provider or os.getenv("LLM_PROVIDER", "anthropic")).lower()
-        self.api_key = api_key or self._resolve_api_key()
-        self.base_url = base_url or os.getenv("OPENROUTER_BASE_URL")
+        self.api_key = api_key or os.getenv("api_key", " ")
+        self.base_url = base_url or os.getenv("base_url")
         self.max_turns = max_turns
 
-        self.system_prompt = (
-            system_prompt
-            or "You are a helpful AI assistant. Be concise and helpful."
-        )
+        self.load_system_prompt()
 
         self.conversation_history: List[Message] = []
         self.tools: Dict[str, Any] = {}
@@ -90,7 +92,7 @@ class Agent:
             )
 
         if self.provider == "anthropic":
-            self.client = AnthropicClient(api_key=self.api_key)
+            self.client = anthropic.Anthropic()
         elif self.provider in ("openai", "openrouter"):
             kwargs = {"api_key": self.api_key}
             if self.base_url:
@@ -190,16 +192,26 @@ class Agent:
 
     def _call_anthropic(self, messages: List[Dict]) -> Dict[str, Any]:
         """Call Anthropic API."""
+        print(messages)
+        print(self.model)
+        print(self.system_prompt)
         response = self.client.messages.create(
             model=self.model,
-            max_tokens=1024,
             system=self.system_prompt,
+            max_tokens=1024,
             messages=messages,
         )
+        # Extract text content, skipping thinking blocks
+        content = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                content = block.text
+                break
+
 
         return {
             "role": "assistant",
-            "content": response.content[0].text,
+            "content": content,
             "tool_calls": [],
         }
 
@@ -221,6 +233,16 @@ class Agent:
         """Clear conversation history."""
         self.conversation_history.clear()
         logger.info("Conversation history cleared")
+
+    def load_system_prompt(self) -> str:
+        '''
+        load system_prompt
+        1. persistent system prompt
+        '''
+        default_prompt = DEFAULT_AGENT_IDENTITY
+        memory_prompt = MEMORY_GUIDANCE
+        self.system_prompt =  default_prompt + ";" +(memory_prompt)
+            
 
     def get_history(self) -> List[Dict[str, str]]:
         """Get conversation history as dict list."""
