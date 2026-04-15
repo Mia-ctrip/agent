@@ -42,7 +42,7 @@ TOOLS=[
         "type": "function",
         "func": clean_container_disk_cache,
         "name": "clean_container_disk_cache",                    # ✅ 必须：字母数字和下划线，最多64字符
-        "description": "该方法需要获取MFA码。清理容器内部缓存目录",
+        "description": "在调用该方法前必须通过调用request_mfa_code获取MFA码。清理容器内部缓存目录",
         "parameters": {
             "type": "object",
             "properties": {
@@ -59,7 +59,7 @@ TOOLS=[
         "type": "function",
         "func": collect_host_disk_info,
         "name": "collect_host_disk_info",
-        "description": "该方法需要获取MFA码。采集宿主机磁盘使用相关信息，包括整体磁盘使用情况以及磁盘的overlay2被业务容器占用的情况。pod overlay2仅采集磁盘占用量在10G以上且排名前5的容器。",
+        "description": "在调用该方法前必须通过调用request_mfa_code获取MFA码。采集宿主机磁盘使用相关信息，包括整体磁盘使用情况以及磁盘的overlay2被业务容器占用的情况。pod overlay2仅采集磁盘占用量在10G以上且排名前5的容器。",
         "parameters": {
             "type": "object",
             "properties": {

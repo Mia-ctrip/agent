@@ -31,6 +31,8 @@ class Message:
     """Represents a conversation message."""
     role: str  # "user", "assistant"
     content: str
+    tool_calls: Optional[List[Dict[str, Any]]] = None  # For assistant messages with tool calls
+    tool_call_id: Optional[str] = None  # For user messages with tool results
 
 
 class Agent:
@@ -75,7 +77,7 @@ class Agent:
         self.max_turns = max_turns
 
         # Setup history file path
-        self.history_file = Path(history_file) if history_file else Path("history_conversation.json")
+        self.history_file = Path(history_file) if history_file else Path("./memory/history_conversation.json")
 
         self.load_system_prompt()
         # Load conversation history from disk
@@ -135,15 +137,20 @@ class Agent:
             # Call the LLM
             response = self._call_llm()
 
+            # Save assistant response with tool calls if any
             if response["role"] == "assistant":
                 self.conversation_history.append(
-                    Message("assistant", response["content"])
+                    Message(
+                        role="assistant",
+                        content=response["content"],
+                        tool_calls=response.get("tool_calls")
+                    )
                 )
                 self._save_history()
 
             # Check if we're done (no tool calls)
             if response["role"] == "assistant" and not response.get("tool_calls"):
-                logger.debug(f"Agent: {response['content']}")
+                logger.info(f"Agent: {response['content']}")
                 return response["content"]
 
             # Process tool calls if any
@@ -151,24 +158,29 @@ class Agent:
                 for tool_call in response["tool_calls"]:
                     tool_name = tool_call["name"]
                     tool_input = tool_call["arguments"]
+                    tool_id = tool_call.get("id", "")
 
                     if tool_name not in self.tool_registry.tools:
                         logger.warning(f"Unknown tool: {tool_name}")
                         continue
 
-                    logger.debug(f"Calling tool: {tool_name} with {tool_input}")
+                    logger.info(f"Calling tool: {tool_name} with {tool_input}")
 
                     # Execute the tool
                     try:
                         result = self.tool_registry.call_function(tool_name, **tool_input)
-                        logger.debug(f"Tool result: {result}")
+                        logger.info(f"Tool result: {result}")
                     except Exception as e:
                         result = f"Error: {str(e)}"
                         logger.error(f"Tool execution failed: {e}")
 
                     # Add tool result to history
                     self.conversation_history.append(
-                        Message("user", f"[Tool result: {result}]")
+                        Message(
+                            role="user",
+                            content=f"[Tool result for {tool_name}]: {result}",
+                            tool_call_id=tool_id
+                        )
                     )
                     self._save_history()
 
@@ -182,8 +194,19 @@ class Agent:
         Returns:
             Response dict with role, content, and optional tool_calls
         """
-        messages = [{"role": msg.role, "content": msg.content}
-                    for msg in self.conversation_history]
+        messages = []
+        for msg in self.conversation_history:
+            message_dict = {"role": msg.role, "content": msg.content}
+
+            # Add tool_calls if present (for OpenAI-compatible APIs)
+            if msg.tool_calls and self.provider != "anthropic":
+                message_dict["tool_calls"] = msg.tool_calls
+
+            # Add tool_call_id if present (for tool results)
+            if msg.tool_call_id and self.provider != "anthropic":
+                message_dict["tool_call_id"] = msg.tool_call_id
+
+            messages.append(message_dict)
 
         if self.provider == "anthropic":
             return self._call_anthropic(messages)
@@ -193,16 +216,50 @@ class Agent:
     def _call_anthropic(self, messages: List[Dict]) -> Dict[str, Any]:
         """Call Anthropic API with tool support."""
 
+        # Convert messages to Anthropic format with content blocks
+        anthropic_messages = []
+        for msg in self.conversation_history:
+            content_blocks = []
+
+            # Add text content if present
+            if msg.content:
+                content_blocks.append({"type": "text", "text": msg.content})
+
+            # Add tool_use blocks for assistant messages
+            if msg.role == "assistant" and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tc["id"],
+                        "name": tc["name"],
+                        "input": tc["arguments"]
+                    })
+
+            # Add tool_result blocks for user messages with tool results
+            if msg.role == "user" and msg.tool_call_id:
+                # Replace text content with tool_result block
+                content_blocks = [{
+                    "type": "tool_result",
+                    "tool_use_id": msg.tool_call_id,
+                    "content": msg.content
+                }]
+
+            # Use content blocks if we have them, otherwise use plain text
+            anthropic_messages.append({
+                "role": msg.role,
+                "content": content_blocks if content_blocks else msg.content
+            })
+
         # Call API
         kwargs = {
             "model": self.model,
             "system": self.system_prompt,
             "max_tokens": 5120,
-            "messages": messages,
+            "messages": anthropic_messages,
         }
 
         # Add tools if available
-        if self.tool_registry:
+        if self.tool_registry and self.tool_registry.tools:
             kwargs["tools"] = self.tool_registry.get_anthropic_function_definitions()
 
         response = self.client.messages.create(**kwargs)
