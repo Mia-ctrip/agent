@@ -220,9 +220,35 @@ class Agent:
                     "name": block.name,
                     "arguments": block.input,
                 })
-    # Parse tool calls from response
+
+        return {
+            "role": "assistant",
+            "content": content,
+            "tool_calls": tool_calls,
+        }
+
+
+    
+    def _call_openai_compatible(self, messages: List[Dict]) -> Dict[str, Any]:
+        """Call OpenAI-compatible API."""
+        # Add tools if available
+        tools = None
+        if self.tool_registry and self.tool_registry.tools:
+            tools = self.tool_registry.get_openai_function_definitions()
+
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": 1024,
+        }
+        if tools:
+            kwargs["tools"] = tools
+
+        response = self.client.chat.completions.create(**kwargs)
+
+        # Parse tool calls from response
         tool_calls = []
-        if hasattr(response.choices[0].message, 'tool_calls') and response.choices[0].message.tool_calls:    
+        if hasattr(response.choices[0].message, 'tool_calls') and response.choices[0].message.tool_calls:
             for tc in response.choices[0].message.tool_calls:
                 tool_calls.append({
                     "id": tc.id,
@@ -234,27 +260,6 @@ class Agent:
             "role": "assistant",
             "content": response.choices[0].message.content or "",
             "tool_calls": tool_calls,
-        }
-
-
-    
-    def _call_openai_compatible(self, messages: List[Dict]) -> Dict[str, Any]:
-         # Add tools if available
-        if self.tool_registry and self.tool_registry.tools:
-           tools = self.tool_registry.get_openai_function_definitions()
-
-        """Call OpenAI-compatible API."""
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            max_tokens=1024,
-            tools=tools,
-        )
-
-        return {
-            "role": "assistant",
-            "content": response.choices[0].message.content or "",
-            "tool_calls": [],
         }
 
     def reset_history(self) -> None:
