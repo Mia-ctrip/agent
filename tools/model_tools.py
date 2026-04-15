@@ -119,16 +119,17 @@ def collect_host_disk_info(host_name: str) -> str:
 
     os.environ['JUMP_PWD'] = "Mars19980729wu!"
 
-    result = subprocess.Popen(
+    result = subprocess.run(
         ["bash", script_path, host_name],
         text=True,
-        stderr=subprocess.STDOUT,  # 合并stderr到stdout
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         env=os.environ
     )
 
-    stdout = result.stdout or ""
-    stderr = result.stderr or ""
-    full_output = stdout + ("\n" + stderr if stderr else "")
+    script_output = result.stdout or ""
+    script_error = result.stderr or ""
+    full_output = script_output + ("\n" + script_error if script_error else "")
 
     if result.returncode == 0:
         return full_output
