@@ -15,8 +15,11 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+
 from rich.console import Console
 from rich.markdown import Markdown
+
+from tools.tool_register import ToolRegistry
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -39,7 +42,7 @@ def print_banner():
     """Print welcome banner."""
     banner = """
     ╭─────────────────────────────────────────╮
-    │           🤖 My Agent v0.1.0           │
+    │        🤖 My GPU Agent v0.1.0           │
     │    A minimal AI agent framework         │
     ╰─────────────────────────────────────────╯
     """
@@ -109,12 +112,7 @@ def setup_agent() -> Agent:
     load_dotenv()
 
     # Create agent
-    agent = Agent(
-        system_prompt=(
-            "You are a helpful AI assistant. You can use tools to help answer questions. "
-            "Be concise and provide accurate information."
-        )
-    )
+    agent = Agent()
 
     # Register built-in tools
     agent.register_tool(
