@@ -378,7 +378,12 @@ class Agent:
                 history_data = json.load(f)
 
             self.conversation_history = [
-                Message(role=msg["role"], content=msg["content"])
+                Message(
+                    role=msg["role"],
+                    content=msg["content"],
+                    tool_calls=msg.get("tool_calls"),
+                    tool_call_id=msg.get("tool_call_id")
+                )
                 for msg in history_data
             ]
             logger.info(f"Loaded {len(self.conversation_history)} messages from {self.history_file}")
