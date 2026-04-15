@@ -25,7 +25,7 @@ from tools.tool_register import ToolRegistry
 sys.path.insert(0, str(Path(__file__).parent))
 
 from agent.core import Agent
-from tools.builtin_tools import calculator, web_search
+from tools.tools_config import TOOLS
 
 # Setup logging
 logging.basicConfig(
@@ -111,20 +111,8 @@ def setup_agent() -> Agent:
     from dotenv import load_dotenv
     load_dotenv()
 
-    # Create agent
-    agent = Agent()
-
-    # Register built-in tools
-    agent.register_tool(
-        "calculator",
-        calculator,
-        "Performs basic arithmetic operations (add, subtract, multiply, divide)"
-    )
-    agent.register_tool(
-        "web_search",
-        web_search,
-        "Search the web for information (placeholder - returns mock results)"
-    )
+    # Create agent with tools from config
+    agent = Agent(tools=TOOLS)
 
     return agent
 

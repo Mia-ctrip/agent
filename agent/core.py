@@ -282,7 +282,17 @@ class Agent:
     def _load_tools(self, tools: List) -> None:
         """Load tools into the agent."""
         self.tool_registry = ToolRegistry()
-        
+
+        # Register tools from the tools list
+        for tool in tools:
+            self.tool_registry.register(
+                type=tool.get("type", "function"),
+                name=tool["name"],
+                description=tool["description"],
+                params=tool["parameters"],
+                func=tool["func"]
+            )
+
         logger.info(f"Loaded {len(tools)} tools into the agent")        
 
     def get_history(self) -> List[Dict[str, str]]:
