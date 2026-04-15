@@ -352,10 +352,9 @@ class Agent:
 
         logger.info(f"Loaded {len(tools)} tools into the agent")        
 
-    def get_history(self) -> List[Dict[str, str]]:
+    def get_history(self) -> List[Dict[str, Any]]:
         """Get conversation history as dict list."""
-        return [{"role": msg.role, "content": msg.content}
-                for msg in self.conversation_history]
+        return [asdict(msg) for msg in self.conversation_history]
 
     def _save_history(self) -> None:
         """Save conversation history to disk."""
