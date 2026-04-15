@@ -57,6 +57,7 @@ class Agent:
         history_file: Optional[str] = None,
         tools: Optional[List] = None,
         tool_registry: Optional[ToolRegistry] = None,
+        enable_auto_memory: bool = True,
     ):
         """
         Initialize the Agent.
@@ -69,15 +70,20 @@ class Agent:
             max_turns: Maximum tool-calling iterations
             system_prompt: System prompt for the agent
             history_file: Path to conversation history file (defaults to history_conversation.json)
+            enable_auto_memory: Enable automatic learning from user corrections
         """
         self.model = model or os.getenv("LLM_MODEL", "MiniMax-M2.7")
         self.provider = (provider or os.getenv("LLM_PROVIDER", "anthropic")).lower()
         self.api_key = api_key or os.getenv("api_key", " ")
         self.base_url = base_url or os.getenv("base_url")
         self.max_turns = max_turns
+        self.enable_auto_memory = enable_auto_memory
 
-        # Setup history file path
-        self.history_file = Path(history_file) if history_file else Path("./memory/history_conversation.json")
+        # Setup paths
+        self.memory_dir = Path("./memory")
+        self.memory_dir.mkdir(exist_ok=True)
+        self.memory_index = self.memory_dir / "MEMORY.md"
+        self.history_file = Path(history_file) if history_file else self.memory_dir / "history_conversation.json"
 
         self.load_system_prompt()
         # Load conversation history from disk
@@ -126,6 +132,10 @@ class Agent:
         Returns:
             The final response from the agent
         """
+        # Check if user is correcting a previous mistake
+        if self.enable_auto_memory and len(self.conversation_history) > 0:
+            self._detect_and_save_correction(user_message)
+
         # Add user message to history
         self.conversation_history.append(Message("user", user_message))
         self._save_history()
@@ -329,12 +339,22 @@ class Agent:
 
     def load_system_prompt(self) -> str:
         '''
-        load system_prompt
-        1. persistent system prompt
+        Load system_prompt including learned memories.
+        1. Default agent identity
+        2. Memory guidance
+        3. Learned feedback from past mistakes
         '''
         default_prompt = DEFAULT_AGENT_IDENTITY
         memory_prompt = MEMORY_GUIDANCE
-        self.system_prompt =  default_prompt + ";" +(memory_prompt)
+
+        # Load learned feedback (check if method exists, as this might be called during __init__)
+        learned_feedback = ""
+        if self.enable_auto_memory and hasattr(self, 'memory_dir'):
+            learned_feedback = self._load_memory_content()
+
+        self.system_prompt = default_prompt + "\n\n" + memory_prompt
+        if learned_feedback:
+            self.system_prompt += "\n\n" + learned_feedback
 
     def _load_tools(self, tools: List) -> None:
         """Load tools into the agent."""
@@ -389,3 +409,157 @@ class Agent:
         except Exception as e:
             logger.error(f"Failed to load history: {e}")
             self.conversation_history = []
+
+    def _detect_and_save_correction(self, user_message: str) -> None:
+        """Detect if user is correcting a mistake and save to memory."""
+        # Keywords that indicate correction
+        correction_indicators = [
+            "不对", "错了", "不是", "应该", "先", "记住", "以后",
+            "别", "不要", "必须", "一定要", "不能", "before", "first",
+            "wrong", "no", "should", "must", "don't", "never", "always"
+        ]
+
+        # Check if message contains correction indicators
+        message_lower = user_message.lower()
+        is_correction = any(indicator in message_lower for indicator in correction_indicators)
+
+        if not is_correction:
+            return
+
+        # Get recent conversation context (last 10 messages)
+        recent_history = self.conversation_history[-10:] if len(self.conversation_history) > 10 else self.conversation_history
+
+        # Use LLM to analyze and generate memory
+        try:
+            logger.info("Detected potential correction, generating memory...")
+            memory_content = self._generate_feedback_memory(recent_history, user_message)
+
+            if memory_content:
+                self._save_feedback_memory(memory_content)
+                logger.info("✅ Saved feedback to memory")
+        except Exception as e:
+            logger.error(f"Failed to save correction to memory: {e}")
+
+    def _generate_feedback_memory(self, recent_history: List[Message], correction: str) -> Optional[str]:
+        """Use LLM to generate structured feedback memory."""
+
+        # Build context from recent history
+        context = []
+        for msg in recent_history:
+            role_label = "User" if msg.role == "user" else "Agent"
+            context.append(f"{role_label}: {msg.content}")
+            if msg.tool_calls:
+                for tc in msg.tool_calls:
+                    context.append(f"  → Tool called: {tc['name']}({tc['arguments']})")
+
+        context_str = "\n".join(context)
+
+        prompt = f"""Based on the conversation history and the user's correction, generate a feedback memory entry.
+
+Conversation history:
+{context_str}
+
+User's correction: {correction}
+
+Analyze what went wrong and generate a structured feedback in this format:
+
+**Rule:** [What the agent should do differently - one clear sentence]
+
+**Why:** [Why the previous approach was wrong - explain the root cause]
+
+**How to apply:** [Specific instructions on when and how to apply this rule]
+
+**What went wrong:** [Brief description of the mistake that was made]
+
+Keep it concise and actionable. Focus on the specific mistake and how to avoid it in the future.
+"""
+
+        try:
+            if self.provider == "anthropic":
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=1024,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                return response.content[0].text
+            else:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=1024
+                )
+                return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"Failed to generate memory: {e}")
+            return None
+
+    def _save_feedback_memory(self, memory_content: str) -> None:
+        """Save feedback memory to disk."""
+        import time
+        import re
+
+        # Generate filename from timestamp
+        timestamp = int(time.time())
+        filename = f"feedback_{timestamp}.md"
+        filepath = self.memory_dir / filename
+
+        # Extract title from content (first line or first sentence)
+        first_line = memory_content.split('\n')[0].strip()
+        # Remove markdown formatting
+        title = re.sub(r'\*\*|\[|\]|\(|\)', '', first_line)[:60]
+
+        # Create memory file with frontmatter
+        frontmatter = f"""---
+name: {title}
+description: Auto-generated from user correction
+type: feedback
+---
+
+{memory_content}
+"""
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(frontmatter)
+
+        # Update MEMORY.md index
+        self._update_memory_index(filename, title)
+
+    def _update_memory_index(self, filename: str, title: str) -> None:
+        """Update MEMORY.md with new memory entry."""
+        index_entry = f"- [{title}]({filename}) — Auto-learned from user correction\n"
+
+        if self.memory_index.exists():
+            content = self.memory_index.read_text(encoding="utf-8")
+            if filename not in content:
+                content += index_entry
+                self.memory_index.write_text(content, encoding="utf-8")
+        else:
+            header = "# Agent Memory\n\nLessons learned from user corrections:\n\n"
+            self.memory_index.write_text(header + index_entry, encoding="utf-8")
+
+    def _load_memory_content(self) -> str:
+        """Load all memory content to include in system prompt."""
+        if not self.memory_index.exists():
+            return ""
+
+        memory_files = list(self.memory_dir.glob("feedback_*.md"))
+        if not memory_files:
+            return ""
+
+        memories = []
+        for mem_file in memory_files[:10]:  # Limit to 10 most recent
+            try:
+                content = mem_file.read_text(encoding="utf-8")
+                # Remove frontmatter
+                if content.startswith("---"):
+                    parts = content.split("---", 2)
+                    if len(parts) >= 3:
+                        content = parts[2].strip()
+                memories.append(content)
+            except Exception as e:
+                logger.warning(f"Failed to load memory {mem_file}: {e}")
+
+        if memories:
+            return "\n\n=== LEARNED FROM PAST MISTAKES ===\n" + "\n\n---\n\n".join(memories)
+        return ""
+

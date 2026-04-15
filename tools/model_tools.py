@@ -82,17 +82,19 @@ def confirm_dangerous_action(action_description: str, details: str = "") -> Dict
 
 def clean_container_disk_cache(host_name: str) -> str:
     """清理容器内部缓存目录
-    
+
     Args:
         host_name: 宿主机名称
-    
+
     Returns:
         清理结果及docker prune的输出分析
     """
-    script_path = "/home/octopus/work/mcp-test/scripts/disk-cleanup-linux.sh"
-    
+    script_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "scripts", "disk-cleanup-linux.sh")
+    )
+
     os.environ['JUMP_PWD'] = "Mars19980729wu!"
-    
+
     result = subprocess.run(
         ["bash", script_path, host_name],
         text=True,
@@ -100,7 +102,7 @@ def clean_container_disk_cache(host_name: str) -> str:
         stderr=subprocess.PIPE,
         env=os.environ
     )
-    
+
     script_output = result.stdout or ""
     script_error = result.stderr or ""
     full_output = script_output + ("\n" + script_error if script_error else "")
