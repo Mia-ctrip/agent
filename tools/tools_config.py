@@ -5,6 +5,10 @@ from .model_tools import (
     clean_container_disk_cache,
     collect_host_disk_info,
 )
+from .memory_tools import (
+    save_memory,
+    read_memory,
+)
 TOOLS=[
      {
         "type": "function",
@@ -70,6 +74,51 @@ TOOLS=[
             },
             "required": ["host_name"]
         }
-    
+
+    },
+    {
+        "type": "function",
+        "func": save_memory,
+        "name": "save_memory",
+        "description": "保存跨会话的持久记忆。用于保存：1)用户偏好和工作方式 2)从错误中学到的经验(feedback) 3)项目背景和进行中的工作 4)外部资源引用。记忆类型：user(用户信息)、feedback(经验教训)、project(项目状态)、reference(外部资源)。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "记忆的主要内容。对于feedback类型，建议包含：规则、原因(Why)、应用方式(How to apply)"
+                },
+                "memory_type": {
+                    "type": "string",
+                    "enum": ["user", "feedback", "project", "reference"],
+                    "description": "记忆类型：user(用户信息)、feedback(经验教训)、project(项目状态)、reference(外部资源位置)"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "记忆的简短名称，用于索引"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "一行描述，说明这条记忆的用途，用于未来判断相关性"
+                }
+            },
+            "required": ["content", "memory_type", "name", "description"]
+        }
+    },
+    {
+        "type": "function",
+        "func": read_memory,
+        "name": "read_memory",
+        "description": "读取已保存的记忆。可以查看所有记忆或通过关键词搜索特定记忆。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "可选的搜索关键词，用于过滤记忆。不提供则返回所有记忆索引。"
+                }
+            },
+            "required": []
+        }
     },
 ]

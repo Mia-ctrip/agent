@@ -44,6 +44,7 @@ class ToolRegistry:
                 "input_schema": tool["params"]
             })
         return function_definitions
+    
     def call_function(self,name,**kwargs):
         if name not in self.tools:
             raise ValueError(f"Tool '{name}' not found")

@@ -542,24 +542,56 @@ type: feedback
         if not self.memory_index.exists():
             return ""
 
-        memory_files = list(self.memory_dir.glob("feedback_*.md"))
-        if not memory_files:
+        # Load all types of memory files
+        memory_patterns = ["user_*.md", "feedback_*.md", "project_*.md", "reference_*.md"]
+        all_memory_files = []
+        for pattern in memory_patterns:
+            all_memory_files.extend(self.memory_dir.glob(pattern))
+
+        if not all_memory_files:
             return ""
 
-        memories = []
-        for mem_file in memory_files[:10]:  # Limit to 10 most recent
+        # Sort by modification time, most recent first
+        all_memory_files = sorted(all_memory_files, key=lambda f: f.stat().st_mtime, reverse=True)
+
+        memories = {
+            "user": [],
+            "feedback": [],
+            "project": [],
+            "reference": []
+        }
+
+        for mem_file in all_memory_files[:20]:  # Limit to 20 most recent
             try:
                 content = mem_file.read_text(encoding="utf-8")
-                # Remove frontmatter
+                # Remove frontmatter and extract type
                 if content.startswith("---"):
                     parts = content.split("---", 2)
                     if len(parts) >= 3:
-                        content = parts[2].strip()
-                memories.append(content)
+                        # Extract memory type from frontmatter
+                        frontmatter = parts[1]
+                        memory_type = None
+                        for line in frontmatter.split('\n'):
+                            if line.strip().startswith('type:'):
+                                memory_type = line.split(':', 1)[1].strip()
+                                break
+
+                        content_text = parts[2].strip()
+                        if memory_type in memories:
+                            memories[memory_type].append(content_text)
             except Exception as e:
                 logger.warning(f"Failed to load memory {mem_file}: {e}")
 
-        if memories:
-            return "\n\n=== LEARNED FROM PAST MISTAKES ===\n" + "\n\n---\n\n".join(memories)
-        return ""
+        # Build formatted memory string
+        result = []
+        if memories["user"]:
+            result.append("=== ABOUT THE USER ===\n" + "\n\n---\n\n".join(memories["user"]))
+        if memories["feedback"]:
+            result.append("=== LEARNED FROM PAST MISTAKES ===\n" + "\n\n---\n\n".join(memories["feedback"]))
+        if memories["project"]:
+            result.append("=== PROJECT CONTEXT ===\n" + "\n\n---\n\n".join(memories["project"]))
+        if memories["reference"]:
+            result.append("=== EXTERNAL REFERENCES ===\n" + "\n\n---\n\n".join(memories["reference"]))
+
+        return "\n\n".join(result) if result else ""
 
